@@ -12,12 +12,15 @@ from MobSF.utils import (
     api_key,
 )
 
+from django.test import TestCase
+
 RESCAN = False
 # Set RESCAN to True if Static Analyzer Code is modified
 
 
 def static_analysis_test():
     """Test Static Analyzer"""
+    print("\n[INFO] Running Static Analyzer Unit test")
     failed = False
     err_msg = '%s'
     if platform.system() != "Windows":
@@ -53,7 +56,7 @@ def static_analysis_test():
                 failed = True
         print("[OK] Static Analysis test completed")
         print("[INFO] Running PDF Generation Test")
-        if platform.system() == 'Darwin':
+        if platform.system() in ['Darwin', 'Linux']:
             pdfs = [
                 "/PDF/?md5=3a552566097a8de588b8184b059b0158&type=APK",
                 "/PDF/?md5=6c23c2970551be15f32bbab0b5db0c71&type=IPA",
@@ -80,13 +83,27 @@ def static_analysis_test():
                 print(resp.content)
                 failed = True
         print("[OK] PDF Generation test completed")
+
+        # Compare apps test
+        print("[INFO] Running App Compare tests")
+        first_app = '3a552566097a8de588b8184b059b0158'
+        second_app = '52c50ae824e329ba8b5b7a0f523efffe'
+        url = '/compare/{}/{}/'.format(first_app, second_app)
+        resp = http_client.get(url, follow=True)
+        assert (resp.status_code == 200)
+        if resp.status_code == 200:
+            print("[OK] App compare tests passed successfully")
+        else:
+            print(err_msg % "[ERROR] App compare tests failed")
+            print(resp.content)
+            failed = True
+
         print("[INFO] Running Delete Scan Results test")
         # Deleting Scan Results
-        if platform.system() == 'Darwin':
+        if platform.system() in ['Darwin', 'Linux']:
             scan_md5s = ["3a552566097a8de588b8184b059b0158", "6c23c2970551be15f32bbab0b5db0c71",
                          "52c50ae824e329ba8b5b7a0f523efffe", "57bb5be0ea44a755ada4a93885c3825e",
-                         "8179b557433835827a70510584f3143e"
-                         ]
+                         "8179b557433835827a70510584f3143e"]
         else:
             scan_md5s = ["3a552566097a8de588b8184b059b0158", "52c50ae824e329ba8b5b7a0f523efffe",
                          "57bb5be0ea44a755ada4a93885c3825e", "8179b557433835827a70510584f3143e"]
@@ -123,7 +140,8 @@ def api_test():
         apk_dir = os.path.join(settings.BASE_DIR, "StaticAnalyzer/test_files/")
         for filename in os.listdir(apk_dir):
             fpath = os.path.join(apk_dir, filename)
-            if platform.system() != 'Darwin' and fpath.endswith(".ipa"):
+            if (platform.system() not in ['Darwin', 'Linux'] and
+                    fpath.endswith(".ipa")):
                 continue
             with open(fpath, "rb") as filp:
                 response = http_client.post(
@@ -148,7 +166,7 @@ def api_test():
                 failed = True
         print("[OK] Static Analysis API test completed")
         print("[INFO] Running PDF Generation API Test")
-        if platform.system() == 'Darwin':
+        if platform.system() in ['Darwin', 'Linux']:
             pdfs = [
                 {"hash": "3a552566097a8de588b8184b059b0158", "scan_type": "apk"},
                 {"hash": "6c23c2970551be15f32bbab0b5db0c71", "scan_type": "ipa"},
@@ -175,13 +193,14 @@ def api_test():
                 print(resp.content)
                 failed = True
         print("[OK] PDF Generation API test completed")
-        print("[INFO] Running Delete Scan API Results test")
+        print("[INFO] Running JSON Report API test")
         # JSON Report
         for pdf in pdfs:
             resp = http_client.post(
                 '/api/v1/report_json', pdf, HTTP_AUTHORIZATION=auth)
             if (resp.status_code == 200 and
-                resp._headers['content-type'][1] == "application/json; charset=utf-8"
+                resp._headers[
+                            'content-type'][1] == "application/json; charset=utf-8"
                 ):
                 print("[OK] JSON Report Generated: " + pdf["hash"])
             else:
@@ -189,9 +208,29 @@ def api_test():
                       "[ERROR] Generating JSON Response: " + pdf["hash"])
                 failed = True
         print("[OK] JSON Report API test completed")
+        print("[INFO] Running View Source API test")
+        # View Source tests
+        files = [{"file": "opensecurity/helloworld/MainActivity.java", "type": "apk", "hash": "3a552566097a8de588b8184b059b0158"},
+                 {"file": "helloworld.app/Info.plist", "type": "ipa", "hash": "6c23c2970551be15f32bbab0b5db0c71"},
+                 {"file": "opensecurity/webviewignoressl/MainActivity.java", "type": "studio", "hash": "52c50ae824e329ba8b5b7a0f523efffe"},
+                 {"file": "DamnVulnerableIOSApp/AppDelegate.m", "type": "ios", "hash": "57bb5be0ea44a755ada4a93885c3825e"}]
+        for sfile in files:
+            resp = http_client.post(
+                '/api/v1/view_source', sfile, HTTP_AUTHORIZATION=auth)
+            if resp.status_code == 200:
+                dat = json.loads(resp.content.decode("utf-8"))
+                if dat["title"]:
+                    print("[OK] Reading - ", sfile)
+                else:
+                    print(err_msg % "[ERROR] Reading - " + sfile)
+                    failed = True
+            else:
+                print(err_msg % "[ERROR] Reading - " + sfile)
+                failed = True
+        print("[OK] View Source API test completed")
         print("[INFO] Running Delete Scan API Results test")
         # Deleting Scan Results
-        if platform.system() == 'Darwin':
+        if platform.system() in ['Darwin', 'Linux']:
             scan_md5s = ["3a552566097a8de588b8184b059b0158", "6c23c2970551be15f32bbab0b5db0c71",
                          "52c50ae824e329ba8b5b7a0f523efffe", "57bb5be0ea44a755ada4a93885c3825e",
                          "8179b557433835827a70510584f3143e"
@@ -221,33 +260,40 @@ def api_test():
 
 def start_test(request):
     """ Static Analyzer Unit test"""
-    print("\n[INFO] Running Static Analyzer Unit test")
+    item = request.GET.get('module', 'static')
+    if item == "static":
+        comp = "static_analyzer"
+        failed_stat = static_analysis_test()
+    else:
+        comp = "static_analyzer_api"
+        failed_stat = api_test()
     try:
-        failed_status = static_analysis_test()
-        if failed_status:
+        if failed_stat:
             message = "some tests failed"
+            resp_code = 403
         else:
             message = "all tests completed"
+            resp_code = 200
     except:
+        resp_code = 403
         message = "error"
     print("\n\n[INFO] ALL TESTS COMPLETED!")
     print("[INFO] Test Status: " + message)
-    return HttpResponse(json.dumps({"static_analyzer_test": message}),
-                        content_type="application/json; charset=utf-8")
+    return HttpResponse(json.dumps({comp: message}),
+                        content_type="application/json; charset=utf-8",
+                        status=resp_code)
 
 
-def start_api_test(request):
-    """ REST API Unit test"""
-    print("\n[INFO] Running REST API Unit test")
-    try:
-        failed_status = api_test()
-        if failed_status:
-            message = "some tests failed"
-        else:
-            message = "all tests completed"
-    except:
-        message = "error"
-    print("\n\n[INFO] ALL TESTS COMPLETED!")
-    print("[INFO] Test Status: " + message)
-    return HttpResponse(json.dumps({"rest_api_test": message}),
-                        content_type="application/json; charset=utf-8")
+class StaticAnalyzerAndAPI(TestCase):
+    """Unit Tests"""
+
+    def setUp(self):
+        self.http_client = Client()
+
+    def test_static_analyzer(self):
+        resp = self.http_client.post('/tests/?module=static')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_rest_api(self):
+        resp = self.http_client.post('/tests/?module=api')
+        self.assertEqual(resp.status_code, 200)

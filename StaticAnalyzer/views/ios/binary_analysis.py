@@ -3,6 +3,7 @@
 
 import re
 import os
+import platform
 import subprocess
 
 from django.conf import settings
@@ -13,65 +14,114 @@ from StaticAnalyzer.tools.strings import strings_util
 from MobSF.utils import PrintException, isFileExists
 
 
-def otool_analysis(bin_name, bin_path, bin_dir):
+SECURE = "Secure"
+IN_SECURE = "Insecure"
+INFO = "Info"
+WARNING = "Warning"
+
+
+def get_otool_out(tools_dir, cmd_type, bin_path, bin_dir):
+    """Get otool args by OS and type"""
+    if len(settings.OTOOL_BINARY) > 0 and isFileExists(settings.OTOOL_BINARY):
+        otool_bin = settings.OTOOL_BINARY
+    else:
+        otool_bin = "otool"
+    if len(settings.JTOOL_BINARY) > 0 and isFileExists(settings.JTOOL_BINARY):
+        jtool_bin = settings.JTOOL_BINARY
+    else:
+        jtool_bin = os.path.join(tools_dir, 'jtool.ELF64')
+    plat = platform.system()
+    if cmd_type == "libs":
+        if plat == "Darwin":
+            args = [otool_bin, '-L', bin_path]
+        elif plat == "Linux":
+            args = [jtool_bin, '-arch', 'arm', '-L', '-v', bin_path]
+        else:
+            # Platform Not Supported
+            return None
+        libs = subprocess.check_output(args).decode("utf-8", "ignore")
+        libs = smart_text(escape(libs.replace(bin_dir + "/", "")))
+        return libs.split("\n")
+    elif cmd_type == "header":
+        if plat == "Darwin":
+            args = [otool_bin, '-hv', bin_path]
+        elif plat == "Linux":
+            args = [jtool_bin, '-arch', 'arm', '-h', '-v', bin_path]
+        else:
+            # Platform Not Supported
+            return None
+        return subprocess.check_output(args)
+    elif cmd_type == "symbols":
+        if plat == "Darwin":
+            args = [otool_bin, '-Iv', bin_path]
+            return subprocess.check_output(args)
+        elif plat == "Linux":
+            arg1 = [jtool_bin, '-arch', 'arm', '-bind', '-v', bin_path]
+            arg2 = [jtool_bin, '-arch', 'arm', '-lazy_bind', '-v', bin_path]
+            return subprocess.check_output(arg1) + subprocess.check_output(arg2)
+        else:
+            # Platform Not Supported
+            return None
+
+
+def otool_analysis(tools_dir, bin_name, bin_path, bin_dir):
     """OTOOL Analysis of Binary"""
     try:
-        print("[INFO] Starting Otool Analysis")
-        otool_dict = {}
-        otool_dict["libs"] = ''
-        otool_dict["anal"] = ''
-        print("[INFO] Running otool against Binary : " + bin_name)
-        if len(settings.OTOOL_BINARY) > 0 and isFileExists(settings.OTOOL_BINARY):
-            otool_bin = settings.OTOOL_BINARY
-        else:
-            otool_bin = "otool"
-        args = [otool_bin, '-L', bin_path]
-        libs = str(subprocess.check_output(args), 'utf-8')
-        libs = smart_text(escape(libs.replace(bin_dir + "/", "")))
-        otool_dict["libs"] = libs.replace("\n", "</br>")
+        otool_dict = {
+            "libs": [],
+            "anal": []
+        }
+        print("[INFO] Running Object Analysis of Binary : " + bin_name)
+        otool_dict["libs"] = get_otool_out(
+            tools_dir, "libs", bin_path, bin_dir)
         # PIE
-        args = [otool_bin, '-hv', bin_path]
-        pie_dat = subprocess.check_output(args)
+        pie_dat = get_otool_out(tools_dir, "header", bin_path, bin_dir)
         if b"PIE" in pie_dat:
-            pie_flag = "<tr><td><strong>fPIE -pie</strong> flag is Found</td><td>" + \
-                "<span class='label label-success'>Secure</span>" + \
-                "</td><td>App is compiled with Position Independent Executable (PIE) flag. " + \
-                "This enables Address Space Layout Randomization (ASLR), a memory protection" +\
-                " mechanism for exploit mitigation.</td></tr>"
+            pie_flag = {
+                "issue": "fPIE -pie flag is Found",
+                "status": SECURE,
+                "description": """App is compiled with Position Independent Executable (PIE) flag. 
+                    This enables Address Space Layout Randomization (ASLR), a memory protection
+                    mechanism for exploit mitigation."""
+            }
         else:
-            pie_flag = "<tr><td><strong>fPIE -pie</strong> flag is not Found</td><td>" +\
-                "<span class='label label-danger'>Insecure</span></td><td>App is not compiled" +\
-                " with Position Independent Executable (PIE) flag. So Address Space Layout " +\
-                "Randomization (ASLR) is missing. ASLR is a memory protection mechanism for" +\
-                " exploit mitigation.</td></tr>"
+            pie_flag = {
+                "issue": "fPIE -pie flag is not Found",
+                "status": IN_SECURE,
+                "description": """with Position Independent Executable (PIE) flag. So Address Space Layout 
+                    Randomization (ASLR) is missing. ASLR is a memory protection mechanism for exploit mitigation."""
+            }
         # Stack Smashing Protection & ARC
-        args = [otool_bin, '-Iv', bin_path]
-        dat = subprocess.check_output(args)
+        dat = get_otool_out(tools_dir, "symbols", bin_path, bin_dir)
         if b"stack_chk_guard" in dat:
-            ssmash = "<tr><td><strong>fstack-protector-all</strong> flag is Found</td><td>" +\
-                "<span class='label label-success'>Secure</span></td><td>App is compiled with" +\
-                " Stack Smashing Protector (SSP) flag and is having protection against Stack" +\
-                " Overflows/Stack Smashing Attacks.</td></tr>"
+            ssmash = {"issue": "fstack-protector-all flag is Found",
+                      "status": SECURE,
+                      "description": """App is compiled with Stack Smashing Protector (SSP) flag and is having protection against Stack
+                Overflows/Stack Smashing Attacks."""
+                      }
         else:
-            ssmash = "<tr><td><strong>fstack-protector-all</strong> flag is not Found</td><td>" +\
-                "<span class='label label-danger'>Insecure</span></td><td>App is " +\
-                "not compiled with Stack Smashing Protector (SSP) flag. It is vulnerable to " +\
-                "Stack Overflows/Stack Smashing Attacks.</td></tr>"
+            ssmash = {"issue": "fstack-protector-all flag is not Found",
+                      "status": IN_SECURE,
+                      "description": """App is not compiled with Stack Smashing Protector (SSP) flag. It is vulnerable to
+                Stack Overflows/Stack Smashing Attacks."""
+                      }
         # ARC
         if b"_objc_release" in dat:
-            arc_flag = "<tr><td><strong>fobjc-arc</strong> flag is Found</td><td>" +\
-                "<span class='label label-success'>Secure</span></td><td>App is compiled " +\
-                "with Automatic Reference Counting (ARC) flag. ARC is a compiler feature " +\
-                "that provides automatic memory management of Objective-C objects and is an" +\
-                " exploit mitigation mechanism against memory corruption vulnerabilities.</td></tr>"
+            arc_flag = {"issue": "fobjc-arc flag is Found",
+                        "status": SECURE,
+                        "description": """App is compiled with Automatic Reference Counting (ARC) flag. ARC is a compiler feature 
+                that provides automatic memory management of Objective-C objects and is an
+                exploit mitigation mechanism against memory corruption vulnerabilities."""
+                        }
         else:
-            arc_flag = "<tr><td><strong>fobjc-arc</strong> flag is not Found</td><td>" +\
-                "<span class='label label-danger'>Insecure</span></td><td>App is not compiled" +\
-                " with Automatic Reference Counting (ARC) flag. ARC is a compiler feature that" +\
-                " provides automatic memory management of Objective-C objects and protects from" +\
-                " memory corruption vulnerabilities.</td></tr>"
+            arc_flag = {"issue": "fobjc-arc flag is not Found",
+                        "status": IN_SECURE,
+                        "description": """App is not compiled with Automatic Reference Counting (ARC) flag. ARC is a compiler feature that
+                provides automatic memory management of Objective-C objects and protects from
+                memory corruption vulnerabilities."""
+                        }
 
-        banned_apis = ''
+        banned_apis = {}
         baned = re.findall(
             b"_alloca|_gets|_memcpy|_printf|_scanf|_sprintf|_sscanf|_strcat|StrCat|_strcpy|" +
             b"StrCpy|_strlen|StrLen|_strncat|StrNCat|_strncpy|StrNCpy|_strtok|_swprintf|_vsnprintf|" +
@@ -80,22 +130,22 @@ def otool_analysis(bin_name, bin_path, bin_dir):
         baned = list(set(baned))
         baned_s = b', '.join(baned)
         if len(baned_s) > 1:
-            banned_apis = "<tr><td>Binary make use of banned API(s)</td><td>" +\
-                "<span class='label label-danger'>Insecure</span></td><td>The binary " +\
-                "may contain the following banned API(s) </br><strong>" + \
-                str(baned_s) + "</strong>.</td></tr>"
-        weak_cryptos = ''
+            banned_apis = {"issue": "Binary make use of banned API(s)",
+                           "status": IN_SECURE,
+                           "description": "The binary may contain the following banned API(s) " + baned_s.decode('utf-8', 'ignore') + "."
+                           }
+        weak_cryptos = {}
         weak_algo = re.findall(
             b"kCCAlgorithmDES|kCCAlgorithm3DES||kCCAlgorithmRC2|kCCAlgorithmRC4|" +
             b"kCCOptionECBMode|kCCOptionCBCMode", dat)
         weak_algo = list(set(weak_algo))
         weak_algo_s = b', '.join(weak_algo)
         if len(weak_algo_s) > 1:
-            weak_cryptos = "<tr><td>Binary make use of some Weak Crypto API(s)</td><td>" +\
-                "<span class='label label-danger'>Insecure</span></td><td>The binary may use " +\
-                "the following weak crypto API(s)</br><strong>" + \
-                str(weak_algo_s) + "</strong>.</td></tr>"
-        crypto = ''
+            weak_cryptos = {"issue": "Binary make use of some Weak Crypto API(s)",
+                            "status": IN_SECURE,
+                            "description": "The binary may use the following weak crypto API(s) " + weak_algo_s.decode('utf-8', 'ignore') + "."
+                            }
+        crypto = {}
         crypto_algo = re.findall(
             b"CCKeyDerivationPBKDF|CCCryptorCreate|CCCryptorCreateFromData|" +
             b"CCCryptorRelease|CCCryptorUpdate|CCCryptorFinal|CCCryptorGetOutputLength|" +
@@ -119,11 +169,11 @@ def otool_analysis(bin_name, bin_path, bin_dir):
         crypto_algo = list(set(crypto_algo))
         crypto_algo_s = b', '.join(crypto_algo)
         if len(crypto_algo_s) > 1:
-            crypto = "<tr><td>Binary make use of the following Crypto API(s)</td><td>" +\
-                "<span class='label label-info'>Info</span></td><td>The binary may use the" +\
-                " following crypto API(s)</br><strong>" + \
-                str(crypto_algo_s) + "</strong>.</td></tr>"
-        weak_hashes = ''
+            crypto = {"issue": "Binary make use of the following Crypto API(s)",
+                      "status": "Info",
+                      "description": "The binary may use the following crypto API(s) " + crypto_algo_s.decode('utf-8', 'ignore') + "."
+                      }
+        weak_hashes = {}
         weak_hash_algo = re.findall(
             b"CC_MD2_Init|CC_MD2_Update|CC_MD2_Final|CC_MD2|MD2_Init|" +
             b"MD2_Update|MD2_Final|CC_MD4_Init|CC_MD4_Update|CC_MD4_Final|CC_MD4|MD4_Init|" +
@@ -133,11 +183,11 @@ def otool_analysis(bin_name, bin_path, bin_dir):
         weak_hash_algo = list(set(weak_hash_algo))
         weak_hash_algo_s = b', '.join(weak_hash_algo)
         if len(weak_hash_algo_s) > 1:
-            weak_hashes = "<tr><td>Binary make use of the following Weak HASH API(s)</td><td>" +\
-                "<span class='label label-danger'>Insecure</span></td><td>The binary " +\
-                "may use the following weak hash API(s)</br><strong>" + \
-                str(weak_hash_algo_s) + "</strong>.</td></tr>"
-        hashes = ''
+            weak_hashe = {"issue": "Binary make use of the following Weak HASH API(s)",
+                          "status": IN_SECURE,
+                          "description": "The binary may use the following weak hash API(s) " + weak_hash_algo_s.decode('utf-8', 'ignore') + "."
+                          }
+        hashes = {}
         hash_algo = re.findall(
             b"CC_SHA224_Init|CC_SHA224_Update|CC_SHA224_Final|CC_SHA224|" +
             b"SHA224_Init|SHA224_Update|SHA224_Final|CC_SHA256_Init|CC_SHA256_Update|" +
@@ -148,71 +198,88 @@ def otool_analysis(bin_name, bin_path, bin_dir):
         hash_algo = list(set(hash_algo))
         hash_algo_s = b', '.join(hash_algo)
         if len(hash_algo_s) > 1:
-            hashes = "<tr><td>Binary make use of the following HASH API(s)</td><td>" +\
-                "<span class='label label-info'>Info</span></td><td>The binary may use the" +\
-                " following hash API(s)</br><strong>" + \
-                str(hash_algo_s) + "</strong>.</td></tr>"
-        randoms = ''
+            hashes = {"issue": "Binary make use of the following HASH API(s)",
+                      "status": INFO,
+                      "description": "The binary may use the following hash API(s) " + hash_algo_s.decode('utf-8', 'ignore') + "."
+                      }
+        randoms = {}
         rand_algo = re.findall(b"_srand|_random", dat)
         rand_algo = list(set(rand_algo))
         rand_algo_s = b', '.join(rand_algo)
         if len(rand_algo_s) > 1:
-            randoms = "<tr><td>Binary make use of the insecure Random Function(s)</td><td>" +\
-                "<span class='label label-danger'>Insecure</span></td><td>The binary may " +\
-                "use the following insecure Random Function(s)</br><strong>" + \
-                str(rand_algo_s) + "</strong>.</td></tr>"
-        logging = ''
+            randoms = {"issue": "Binary make use of the insecure Random Function(s)",
+                       "status": IN_SECURE,
+                       "description": "The binary may use the following insecure Random Function(s) " + rand_algo_s.decode('utf-8', 'ignore') + "."
+                       }
+        logging = {}
         log = re.findall(b"_NSLog", dat)
         log = list(set(log))
         log_s = b', '.join(log)
         if len(log_s) > 1:
-            logging = "<tr><td>Binary make use of Logging Function</td><td>" +\
-                "<span class='label label-info'>Info</span></td><td>The binary may " +\
-                "use <strong>NSLog</strong> function for logging.</td></tr>"
-        malloc = ''
+            logging = {"issue": "Binary make use of Logging Function",
+                       "status": INFO,
+                       "description": "The binary may use NSLog function for logging."
+                       }
+        malloc = {}
+
         mal = re.findall(b"_malloc", dat)
         mal = list(set(mal))
         mal_s = b', '.join(mal)
         if len(mal_s) > 1:
-            malloc = "<tr><td>Binary make use of <strong>malloc</strong> Function</td><td>" +\
-                "<span class='label label-danger'>Insecure</span></td><td>The binary may use " +\
-                "<strong>malloc</strong> function instead of <strong>calloc</strong>.</td></tr>"
-        debug = ''
+            malloc = {"issue": "Binary make use of malloc Function",
+                      "status": IN_SECURE,
+                      "description": "The binary may use malloc function instead of calloc."
+                      }
+        debug = {}
+
         ptrace = re.findall(b"_ptrace", dat)
         ptrace = list(set(ptrace))
         ptrace_s = b', '.join(ptrace)
         if len(ptrace_s) > 1:
-            debug = "<tr><td>Binary calls <strong>ptrace</strong> Function for anti-debugging." +\
-                "</td><td><span class='label label-warning'>warning</span></td><td>The binary" +\
-                " may use <strong>ptrace</strong> function. It can be used to detect and prevent" +\
-                " debuggers. Ptrace is not a public API and Apps that use non-public APIs will" +\
-                " be rejected from AppStore. </td></tr>"
-        otool_dict["anal"] = pie_flag + ssmash + arc_flag + banned_apis + weak_cryptos + \
-            crypto + weak_hashes + hashes + randoms + logging + malloc + \
-            debug
+            debug = {"issue": "Binary calls ptrace Function for anti-debugging.",
+                     "status": WARNING,
+                     "description": """The binary may use ptrace function. It can be used to detect and prevent debuggers. 
+                            Ptrace is not a public API and Apps that use non-public APIs will be rejected from AppStore. """
+                     }
+        otool_dict["anal"] = [pie_flag, ssmash, arc_flag, banned_apis, weak_cryptos,
+                              crypto, weak_hashes, hashes, randoms, logging, malloc, debug]
         return otool_dict
     except:
-        PrintException("[ERROR] Performing Otool Analysis of Binary")
+        PrintException("[ERROR] Performing Object Analysis of Binary")
 
 
 def class_dump_z(tools_dir, bin_path, app_dir):
     """Running Classdumpz on binary"""
     try:
-        webview = ''
-        print("[INFO] Running class-dump-z against the Binary")
-        if len(settings.CLASSDUMPZ_BINARY) > 0 and isFileExists(settings.CLASSDUMPZ_BINARY):
-            class_dump_z_bin = settings.CLASSDUMPZ_BINARY
+        webview = {}
+        if platform.system() == "Darwin":
+            print("[INFO] Running class-dump-z against the binary for dumping classes")
+            if len(settings.CLASSDUMPZ_BINARY) > 0 and isFileExists(settings.CLASSDUMPZ_BINARY):
+                class_dump_z_bin = settings.CLASSDUMPZ_BINARY
+            else:
+                class_dump_z_bin = os.path.join(tools_dir, 'class-dump-z')
+            subprocess.call(["chmod", "777", class_dump_z_bin])
+            args = [class_dump_z_bin, bin_path]
+        elif platform.system() == "Linux":
+            print("[INFO] Running jtool against the binary for dumping classes")
+            if len(settings.JTOOL_BINARY) > 0 and isFileExists(settings.JTOOL_BINARY):
+                jtool_bin = settings.JTOOL_BINARY
+            else:
+                jtool_bin = os.path.join(tools_dir, 'jtool.ELF64')
+            subprocess.call(["chmod", "777", jtool_bin])
+            args = [jtool_bin, '-arch', 'arm', '-d', 'objc', '-v', bin_path]
         else:
-            class_dump_z_bin = os.path.join(tools_dir, 'class-dump-z')
-        subprocess.call(["chmod", "777", class_dump_z_bin])
-        class_dump = subprocess.check_output([class_dump_z_bin, bin_path])
+            # Platform not supported
+            return {}
+        classdump = subprocess.check_output(args)
         dump_file = os.path.join(app_dir, "classdump.txt")
         with open(dump_file, "w") as flip:
-            flip.write(class_dump.decode("utf-8"))
-        if b"UIWebView" in class_dump:
-            webview = "<tr><td>Binary uses WebView Component.</td><td>" +\
-                "<span class='label label-info'>Info</span></td><td>The binary" +\
-                " may use WebView Component.</td></tr>"
+            flip.write(classdump.decode("utf-8", "ignore"))
+        if b"UIWebView" in classdump:
+            webview = {"issue": "Binary uses WebView Component.",
+                       "status": INFO,
+                       "description":  "The binary may use WebView Component."
+                       }
         return webview
     except:
         print("[INFO] class-dump-z does not work on iOS apps developed in Swift")
@@ -225,13 +292,14 @@ def strings_on_ipa(bin_path):
         print("[INFO] Running strings against the Binary")
         unique_str = []
         unique_str = list(set(strings_util(bin_path)))  # Make unique
-        unique_str = [escape(ip_str) for ip_str in unique_str]  # Escape evil strings
+        unique_str = [escape(ip_str)
+                      for ip_str in unique_str]  # Escape evil strings
         return unique_str
     except:
         PrintException("[ERROR] - Running strings against the Binary")
 
 
-def binary_analysis(src, tools_dir, app_dir):
+def binary_analysis(src, tools_dir, app_dir, executable_name):
     """Binary Analysis of IPA"""
     try:
         binary_analysis_dict = {}
@@ -244,24 +312,28 @@ def binary_analysis(src, tools_dir, app_dir):
                 break
         # Bin Dir - Dir/Payload/x.app/
         bin_dir = os.path.join(src, dot_app_dir)
-        bin_name = dot_app_dir.replace(".app", "")
+        if executable_name is None:
+            bin_name = dot_app_dir.replace(".app", "")
+        else:
+            bin_name = executable_name
         # Bin Path - Dir/Payload/x.app/x
         bin_path = os.path.join(bin_dir, bin_name)
-        binary_analysis_dict["libs"] = ''
-        binary_analysis_dict["bin_res"] = ''
-        binary_analysis_dict["strings"] = ''
+        binary_analysis_dict["libs"] = []
+        binary_analysis_dict["bin_res"] = []
+        binary_analysis_dict["strings"] = []
         if not isFileExists(bin_path):
             print("[WARNING] MobSF Cannot find binary in " + bin_path)
             print("[WARNING] Skipping Otool, Classdump and Strings")
         else:
-            otool_dict = otool_analysis(bin_name, bin_path, bin_dir)
+            otool_dict = otool_analysis(tools_dir, bin_name, bin_path, bin_dir)
             cls_dump = class_dump_z(tools_dir, bin_path, app_dir)
-            #Classdumpz can fail on swift coded binaries
+            # Classdumpz can fail on swift coded binaries
             if not cls_dump:
-                cls_dump = ""
+                cls_dump = {}
             strings_in_ipa = strings_on_ipa(bin_path)
+            otool_dict["anal"] = list(filter(None, otool_dict["anal"] + [cls_dump]))
             binary_analysis_dict["libs"] = otool_dict["libs"]
-            binary_analysis_dict["bin_res"] = otool_dict["anal"] + cls_dump
+            binary_analysis_dict["bin_res"] = otool_dict["anal"]
             binary_analysis_dict["strings"] = strings_in_ipa
         return binary_analysis_dict
     except:

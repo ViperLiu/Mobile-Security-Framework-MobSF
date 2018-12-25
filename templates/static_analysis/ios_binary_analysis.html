@@ -98,8 +98,8 @@
         <div class="box-body">
            <div class="list-group">
                   <p>
-                      <span class="label label-primary">Name</span>
-                      {{ name }}
+                      <span class="label label-primary">File Name</span>
+                      {{ file_name }}
                   </p>
                   <p>
                       <span class="label label-primary">Size</span>
@@ -123,35 +123,37 @@
       </div><!-- /.box -->
     </div><!-- /.col -->
     <div class="col-sm-5">
-      <div class="box box-danger">
+      <div class="box box-warning">
         <div class="box-header with-border">
           <h3 class="box-title">App Information</h3>
-          <span class="label label-danger pull-right"><i class="glyphicon glyphicon-info-sign"></i></span>
+          <span class="label label-warning pull-right"><i class="glyphicon glyphicon-info-sign"></i></span>
         </div><!-- /.box-header -->
         <div class="box-body">
         <div class="list-group">
                <p>
-              <span class="label label-primary">App Name</span>
+              <span class="label label-warning">App Name</span>
               {{ bin_name }}
               </p>
                <p>
-              <span class="label label-primary">Identifier</span>
-              {{ id }}
-                <span class="label label-primary">SDK Name</span>
+              <span class="label label-warning">Identifier</span>
+              {{ id }} 
+              </p>
+              <p>
+                <span class="label label-warning">SDK Name</span>
               {{ sdk }}
 
 
               </p>
                 <p>
-             <span class="label label-primary">Version</span>
-              {{ ver }}
+                  <span class="label label-warning">Version</span>
+                    {{ version }}
+                  <span class="label label-warning">Build</span>
+                    {{ build }}
                </p>
                <p>
-              <span class="label label-primary">Platform Version</span>
+              <span class="label label-warning">Platform Version</span>
               {{ pltfm }}
-            </p>
-            <p>
-             <span class="label label-primary">Min OS Version</span>
+             <span class="label label-warning">Min OS Version</span>
               {{ min }}
             </p>
        </div>
@@ -174,17 +176,17 @@
   <div class="row">
 
     <div class="col-sm-12">
-      <div class="box box-danger">
+      <div class="box box-info">
         <div class="box-header with-border">
           <h3 class="box-title">Options</h3>
-          <span class="label label-danger pull-right"><i class="fa fa-flash"></i></span>
+          <span class="label label-info pull-right"><i class="fa fa-flash"></i></span>
         </div><!-- /.box-header -->
         <div class="box-body">
          <div align="center">
       <a data-target="#myModal" role="button" class="btn btn-info" data-toggle="modal"><i class="fa fa-list"></i> View Info.plist</a>
       <a data-target="#myModalStrings" role="button" class="btn btn-info" data-toggle="modal"><i class="fa fa-list"></i> View Strings</a>
-      <a target="_blank" href="../ViewFile/?file=classdump.txt&type=txt&md5={{ md5 }}&mode=ios" class="btn btn-warning" role="button"><i class="fa fa-code"></i> View Class Dump</a>
-      <a href="../StaticAnalyzer_iOS/?checksum={{ md5 }}&amp;name={{ name }}&amp;type=ipa&amp;rescan=1" class="btn btn-info" role="button"><i class="glyphicon glyphicon-refresh"></i> Rescan</a>
+      <a target="_blank" href="../ViewFile/?file=classdump.txt&md5={{ md5 }}&type=ios" class="btn btn-warning" role="button"><i class="fa fa-code"></i> View Class Dump</a>
+      <a href="../StaticAnalyzer_iOS/?checksum={{ md5 }}&amp;name={{ file_name }}&amp;type=ipa&amp;rescan=1" class="btn btn-info" role="button"><i class="glyphicon glyphicon-refresh"></i> Rescan</a>
 </div>
 
                </div><!-- /.box-body -->
@@ -221,16 +223,17 @@
                       </tr>
                   </thead>
                   <tbody>
-                    {%for perm in permissions%}
+
+                    {%for  perm in permissions%}
                     <tr>
                       <td>
-                        {{ perm.0 | safe}}
+                        {{ perm.name }}
                       </td>
                       <td>
-                        {{ perm.1 | safe}}
+                        {{ perm.description | safe}}
                       </td>
                       <td>
-                        {{ perm.2 | safe}}
+                        {{ perm.reason | safe}}
                       </td>
                     </tr>
                     {% endfor %}
@@ -332,9 +335,29 @@
 
                       </tr>
                   </thead>
-                  <tbody>
-                    {{ bin_anal | safe}}
-                    </tbody>
+                     <tbody>
+                   {%for  bin in bin_anal%}
+                    <tr>
+                      <td>
+                        {{ bin.issue }}
+                      </td>
+                      <td>
+                        {% if bin.status == 'Info' %}
+                          <span class='label label-info'>{{bin.status}}</span>
+                        {% elif bin.status == 'Secure' %}
+                          <span class='label label-success'>{{bin.status}}</span>
+                        {% elif bin.status == 'Insecure' %}
+                          <span class='label label-danger'>{{bin.status}}</span>
+                        {% elif bin.status == 'Warning' %}
+                          <span class='label label-warning'>{{bin.status}}</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        {{ bin.description | safe}}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                 </tbody>
                     </table>
 
                             </div>
@@ -408,15 +431,33 @@
             <div class="box-body no-padding">
             <div class="table-responsive">
           <table class="table table-bordered table-hover table-striped">
-              <thead>
-                  <tr>
-                      <th>ISSUE</th>
-                      <th>FILES</th>
-                  </tr>
-              </thead>
-              <tbody>
-              {{ file_analysis | safe}}
-              </tbody>
+                  <thead>
+                      <tr>
+                          <th>ISSUE</th>
+                          <th>FILES</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+
+                    {%for item in file_analysis %}
+                    <tr>
+                      <td>
+                        {{ item.issue }}
+                      </td>
+                      <td>
+                        {% for file in item.files %}
+                          {% if file.type %}
+                          <a href="../ViewFile/?file={{file.file_path}}&type={{file.type}}&md5={{file.hash}}">{{ file.file_path }}</a>
+                          {% else %}
+                          {{ file.file_path }}
+                          {% endif %}
+                          </br>
+                        {% endfor %}
+                      </td>
+                  
+                    </tr>
+                    {% endfor %}
+                  </tbody>
               </table>
 
                             </div>
@@ -444,7 +485,10 @@
 
 
                   <p>
-                  {{ libs|safe }}
+                    {% for lib in libs %}
+                    {{ lib }}
+                    </br>
+                    {% endfor %}
                   </p>
 
                                 </div>

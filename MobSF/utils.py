@@ -1,3 +1,6 @@
+"""
+Common Utils
+"""
 import os
 import signal
 import platform
@@ -10,17 +13,16 @@ import time
 import datetime
 import ntpath
 import hashlib
-import urllib.request
-import urllib.error
-import urllib.parse
 import io
 import ast
 import unicodedata
-import http.client
+import shutil
 import requests
-from . import settings
+
 
 from django.shortcuts import render
+
+from . import settings
 
 
 class Color(object):
@@ -47,15 +49,17 @@ def upstream_proxy(flaw_type):
             proxies = {flaw_type: proxy_host}
     else:
         proxies = {flaw_type: None}
-    if settings.UPSTREAM_PROXY_SSL_VERIFY:
-        verify = True
-    else:
-        verify = False
+    verify = bool(settings.UPSTREAM_PROXY_SSL_VERIFY)
     return proxies, verify
 
 
 def api_key():
     """Print REST API Key"""
+
+    if os.environ.get('MOBSF_API_KEY'):
+        print("\nAPI Key read from environment variable")
+        return os.environ['MOBSF_API_KEY']
+
     secret_file = os.path.join(settings.MobSF_HOME, "secret")
     if isFileExists(secret_file):
         try:
@@ -105,7 +109,7 @@ def check_update():
                     print("""\n[WARN] A new version of MobSF is available,
 Please update from master branch or check for new releases.\n""")
                 else:
-                    print("\n[INFO] No updates available.")
+                    print("[INFO] No updates available.")
     except requests.exceptions.HTTPError as err:
         print("\n[WARN] Cannot check for updates.. No Internet Connection Found.")
         return
@@ -205,7 +209,7 @@ def migrate(BASE_DIR):
 def kali_fix(BASE_DIR):
     try:
         if platform.system() == "Linux" and platform.dist()[0] == "Kali":
-            fix_path = os.path.join(BASE_DIR, "MobSF/kali_fix.sh")
+            fix_path = os.path.join(BASE_DIR, "scripts/kali_fix.sh")
             subprocess.call(["chmod", "a+x", fix_path])
             subprocess.call([fix_path], shell=True)
     except:
@@ -237,11 +241,14 @@ def FindVbox(debug=False):
         if debug:
             PrintException("[ERROR] Cannot find VirtualBox path.")
 
+# Maintain JDK Version
+JAVA_VER = '1.7|1.8|1.9|2.0|2.1|2.2|2.3'
+
 
 def FindJava(debug=False):
     """ Find Java """
     # Maintain JDK Version
-    java_versions = '1.7|1.8|1.9|2.0|2.1|2.2|2.3|8|9'
+    java_versions = '1.7|1.8|1.9|2.0|2.1|2.2|2.3|8|9|10|11'
     """
     This code is needed because some people are not capable
     of setting java path :-(
@@ -332,9 +339,19 @@ def FindJava(debug=False):
                         print(Color.BOLD + Color.RED + err_msg + Color.END)
                     return "java"
             else:
-                if debug:
-                    print(Color.BOLD + Color.RED + err_msg1 + Color.END)
-                return "java"
+                args = [mac_linux_java_dir + "java", '-version']
+                dat = RunProcess(args)
+                f_line = dat.split("\n")[0]
+                if re.findall(java_versions, f_line):
+                    if debug:
+                        print("[INFO] JDK 1.7 or above is available")
+                    return mac_linux_java_dir
+                else:
+                    err_msg = "[ERROR] Please install Oracle JDK 1.7 or above"
+                    if debug:
+                        print(Color.BOLD + Color.RED + err_msg + Color.END)
+                    return "java"
+
     except:
         if debug:
             PrintException("[ERROR] Oracle Java (JDK >=1.7) is not found!")
@@ -505,6 +522,10 @@ def gen_sha256_hash(msg):
 def isFileExists(file_path):
     if os.path.isfile(file_path):
         return True
+    # This fix situation where a user just typed "adb" or another executable
+    # inside settings.py
+    if shutil.which(file_path):
+        return True
     else:
         return False
 
@@ -533,7 +554,7 @@ def zipdir(path, zip_file):
         PrintException("[ERROR] Zipping")
 
 
-def getADB(TOOLSDIR):
+def getADB():
     """Get ADB binary path"""
     try:
         if len(settings.ADB_BINARY) > 0 and isFileExists(settings.ADB_BINARY):
@@ -541,15 +562,15 @@ def getADB(TOOLSDIR):
         else:
             adb = 'adb'
             if platform.system() == "Darwin":
-                adb_dir = os.path.join(TOOLSDIR, 'adb/mac/')
+                adb_dir = os.path.join(settings.TOOLS_DIR, 'adb/mac/')
                 subprocess.call(["chmod", "777", adb_dir])
-                adb = os.path.join(TOOLSDIR, 'adb/mac/adb')
+                adb = os.path.join(settings.TOOLS_DIR, 'adb/mac/adb')
             elif platform.system() == "Linux":
-                adb_dir = os.path.join(TOOLSDIR, 'adb/linux/')
+                adb_dir = os.path.join(settings.TOOLS_DIR, 'adb/linux/')
                 subprocess.call(["chmod", "777", adb_dir])
-                adb = os.path.join(TOOLSDIR, 'adb/linux/adb')
+                adb = os.path.join(settings.TOOLS_DIR, 'adb/linux/adb')
             elif platform.system() == "Windows":
-                adb = os.path.join(TOOLSDIR, 'adb/windows/adb.exe')
+                adb = os.path.join(settings.TOOLS_DIR, 'adb/windows/adb.exe')
             return adb
     except:
         PrintException("[ERROR] Getting ADB Location")
@@ -558,9 +579,7 @@ def getADB(TOOLSDIR):
 
 def adb_binary_or32bit_support():
     """Check if 32bit is supported. Also if the binary works"""
-    tools_dir = os.path.join(
-        settings.BASE_DIR, 'DynamicAnalyzer/tools/')
-    adb_path = getADB(tools_dir)
+    adb_path = getADB()
     try:
         fnull = open(os.devnull, 'w')
         subprocess.call([adb_path], stdout=fnull, stderr=fnull)
@@ -599,3 +618,4 @@ def check_basic_env():
                  JAVA_DIRECTORY = "/usr/bin/"
         ''')
         os.kill(os.getpid(), signal.SIGTERM)
+
