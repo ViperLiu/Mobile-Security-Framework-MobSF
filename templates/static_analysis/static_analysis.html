@@ -761,6 +761,54 @@ Production ready applications should not be signed with 'Android Debug' Certific
           <!-- /.box -->
 </section>
 
+<!-- QARK============================================================= -->
+
+<section id="code">
+  <h2 class="page-header"></h2>
+  <!-- /.box -->
+
+         <div class="box">
+           <div class="box-header">
+             <h3 class="box-title"><i class="fa  fa-code"></i> Code Analysis - QARK</h3>
+           </div>
+           <!-- /.box-header -->
+           <div class="box-body no-padding">
+            <div class="table-responsive">
+              <table class="table table-bordered table-hover table-striped">
+                <thead>
+                  <tr>
+                    <th>ISSUE</th>
+                    <th>DETAIL</th>
+                    <th>FILES</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for key, value in qark_result.items %}
+                    {% if value.files %}
+                      <tr>
+                        <td>
+                        {{ key }}
+                        </td>
+                        <td>{{ value.description }}</td>
+                        <td>
+                        {% for file in value.files %}
+                        <a href="../ViewSource/?file={{ file }}&md5={{ md5 }}&type=apk"> {{ file }}</a>
+                        </br>
+                        {% endfor %}
+                        </td>
+                      </tr>    
+                    {% endif %}
+                  {% endfor %} 
+    
+                </tbody>
+              </table>
+                               
+            </div>
+          </div>
+           <!-- /.box-body -->
+         </div>
+         <!-- /.box -->
+</section>
 
 <!-- ============================================================= -->
 
