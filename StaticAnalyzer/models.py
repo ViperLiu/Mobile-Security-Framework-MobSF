@@ -55,6 +55,7 @@ class StaticAnalyzerAndroid(models.Model):
     E_BRO = models.CharField(max_length=50)
     E_CNT = models.CharField(max_length=50)
     APK_ID = models.TextField()
+    QARK = models.TextField()
 
 
 class StaticAnalyzerIPA(models.Model):
