@@ -44,11 +44,11 @@ class Issue(object):
         self.file_object = file_object
         self.apk_exploit_dict = apk_exploit_dict
 
-    def __repr__(self):
+    """ def __repr__(self):
         return ("Issue(category={}, name={}, severity={}, description={}, line_number={}, "
                 "file_object={}, apk_exploit_dict={})".format(self.category, self.name, self.severity,
                                                               self.description, self.line_number, self.file_object,
-                                                              self.apk_exploit_dict))
+                                                              self.apk_exploit_dict)) """
 
     def __hash__(self):
         return hash((self.name, self.file_object, self.line_number))
