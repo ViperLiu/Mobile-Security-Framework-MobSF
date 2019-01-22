@@ -784,18 +784,20 @@ Production ready applications should not be signed with 'Android Debug' Certific
                 </thead>
                 <tbody>
                   {% for key, value in qark_result.items %}
-                    <tr>
-                    <td>
-                    {{ key }}
-                    </td>
-                    <td>{{ value.description }}</td>
-                    <td>
-                    {% for file in value.files %}
-                    <a href="../ViewSource/?file={{ file }}&md5={{ md5 }}&type=apk"> {{ file }}</a>
-                    </br>
-                    {% endfor %}
-                    </td>
-                  </tr>    
+                    {% if value.files %}
+                      <tr>
+                        <td>
+                        {{ key }}
+                        </td>
+                        <td>{{ value.description }}</td>
+                        <td>
+                        {% for file in value.files %}
+                        <a href="../ViewSource/?file={{ file }}&md5={{ md5 }}&type=apk"> {{ file }}</a>
+                        </br>
+                        {% endfor %}
+                        </td>
+                      </tr>    
+                    {% endif %}
                   {% endfor %} 
     
                 </tbody>
