@@ -129,7 +129,9 @@ class Scanner(object):
                 new_issues[issue.name]['title'] = issue.name
                 new_issues[issue.name]['description'] = issue.description
                 new_issues[issue.name]['files'] = list()
-            new_issues[issue.name]['files'].append(issue.file_object)
+            if issue.file_object.endswith(".java"):
+                issue.file_object = issue.file_object.split("java_source")[1]
+                new_issues[issue.name]['files'].append(issue.file_object)
 
         return dict(new_issues)
 
