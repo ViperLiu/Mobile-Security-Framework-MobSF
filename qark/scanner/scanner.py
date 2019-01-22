@@ -124,8 +124,12 @@ class Scanner(object):
 
         for issue in self.issues:
             if issue.name not in new_issues:
-                new_issues[issue.name] = list()
-            new_issues[issue.name].append(issue)
+                new_issues[issue.name] = dict()
+                new_issues[issue.name]['severity'] = issue.severity.name
+                new_issues[issue.name]['title'] = issue.name
+                new_issues[issue.name]['description'] = issue.description
+                new_issues[issue.name]['files'] = list()
+            new_issues[issue.name]['files'].append(issue.file_object)
 
         return dict(new_issues)
 
