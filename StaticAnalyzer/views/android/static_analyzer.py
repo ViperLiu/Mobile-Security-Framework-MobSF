@@ -227,6 +227,7 @@ def static_analyzer(request, api=False):
                                 cert_dic,
                                 bin_an_buff,
                                 apkid_results,
+                                qark_result,
                             )
                         elif rescan == '0':
                             print("\n[INFO] Saving to Database")
@@ -238,6 +239,7 @@ def static_analyzer(request, api=False):
                                 cert_dic,
                                 bin_an_buff,
                                 apkid_results,
+                                qark_result,
                             )
                     except:
                         PrintException("[ERROR] Saving to Database Failed")
@@ -249,6 +251,7 @@ def static_analyzer(request, api=False):
                         cert_dic,
                         bin_an_buff,
                         apkid_results,
+                        qark_result,
                     )
                 context["average_cvss"], context[
                     "security_score"] = score(context["findings"])
@@ -379,6 +382,7 @@ def static_analyzer(request, api=False):
                                     cert_dic,
                                     bin_an_buff,
                                     {},
+                                    {},
                                 )
                             elif rescan == '0':
                                 print("\n[INFO] Saving to Database")
@@ -390,6 +394,7 @@ def static_analyzer(request, api=False):
                                     cert_dic,
                                     bin_an_buff,
                                     {},
+                                    {},
                                 )
                         except:
                             PrintException("[ERROR] Saving to Database Failed")
@@ -400,6 +405,7 @@ def static_analyzer(request, api=False):
                             code_an_dic,
                             cert_dic,
                             bin_an_buff,
+                            {},
                             {},
                         )
                     else:
