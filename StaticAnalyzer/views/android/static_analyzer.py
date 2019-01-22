@@ -54,7 +54,8 @@ from StaticAnalyzer.views.android.cert_analysis import (
 from StaticAnalyzer.views.android.manifest_analysis import (
     manifest_data,
     manifest_analysis,
-    get_manifest
+    get_manifest,
+    get_manifest_file
 )
 from StaticAnalyzer.views.android.binary_analysis import (
     elf_analysis,
@@ -68,6 +69,8 @@ from StaticAnalyzer.views.android.icon_analysis import (
 import StaticAnalyzer.views.android.VirusTotal as VirusTotal
 
 from MalwareAnalyzer.views import apkid_analysis
+
+from qark.scanner.scanner import Scanner
 
 
 @register.filter
@@ -200,6 +203,17 @@ def static_analyzer(request, api=False):
                     )
                     app_dic['zipped'] = '&type=apk'
 
+                    # QARK SCANNER
+                    print("\n[INFO] Running Qark Scanner") 
+                    manifest = get_manifest_file( 
+                        app_dic['app_path'], 
+                        app_dic['app_dir'], 
+                        app_dic['tools_dir'] 
+                        ) 
+                    scanner = Scanner(manifest_path=manifest, path_to_source=app_dic['app_dir']) 
+                    scanner.run() 
+                    qark_result = scanner.regroup_issues()
+                    
                     print("\n[INFO] Connecting to Database")
                     try:
                         # SAVE TO DB
